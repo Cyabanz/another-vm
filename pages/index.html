@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vapor-Style Hyperbeam Session</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #101925; color: #fff; text-align: center; padding: 2rem; min-height: 100vh; }
+    button { background: #4c75f2; color: #fff; border: none; border-radius: 6px; padding: 1em 2em; font-size: 1.1em; cursor: pointer; margin: 1em; }
+    button:disabled { background: #888; }
+    #timer { font-size: 1.2em; margin: 1em 0; }
+    .error { color: #ff6363; margin: 1em 0; }
+    a { color: #4c75f2; }
+  </style>
+</head>
+<body>
+  <h1>Vapor-Style Hyperbeam Session</h1>
+  <div id="controls">
+    <button id="startBtn">Start Session</button>
+    <button id="endBtn" style="display:none;">End Session</button>
+  </div>
+  <div id="timer"></div>
+  <div id="sessionLink"></div>
+  <div id="error" class="error"></div>
+
+  <script>
+    let csrfToken = null;
+    let sessionUrl = null;
+    let timerId = null;
+    let timeLeft = 0;
+
+    // 1. Fetch CSRF token on load
+    fetch('/api/csrf')
+      .then(res => res.json())
+      .then(data => { csrfToken = data.csrfToken; });
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function startTimer(duration) {
+      timeLeft = duration;
+      document.getElementById('timer').textContent = `Time left: ${formatTime(timeLeft)}`;
+      timerId = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timer').textContent = `Time left: ${formatTime(timeLeft)}`;
+        if (timeLeft <= 0) {
+          clearInterval(timerId);
+          endSession();
+        }
+      }, 1000);
+    }
+
+    function startSession() {
+      document.getElementById('error').textContent = '';
+      document.getElementById('startBtn').disabled = true;
+      fetch('/api/hyperbeam', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfToken
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.url) {
+          sessionUrl = data.url;
+          document.getElementById('sessionLink').innerHTML = `<a href="${sessionUrl}" target="_blank">Open your VM</a>`;
+          document.getElementById('endBtn').style.display = '';
+          startTimer(data.expires_in || 720);
+        } else {
+          document.getElementById('error').textContent = data.error || 'Failed to start session';
+          document.getElementById('startBtn').disabled = false;
+        }
+      })
+      .catch(err => {
+        document.getElementById('error').textContent = err.message;
+        document.getElementById('startBtn').disabled = false;
+      });
+    }
+
+    function endSession() {
+      sessionUrl = null;
+      document.getElementById('sessionLink').textContent = '';
+      document.getElementById('endBtn').style.display = 'none';
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('timer').textContent = '';
+      clearInterval(timerId);
+      fetch('/api/end-hyperbeam', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfToken
+        }
+      });
+    }
+
+    document.getElementById('startBtn').onclick = startSession;
+    document.getElementById('endBtn').onclick = endSession;
+
+    // End session on tab close
+    window.addEventListener('beforeunload', endSession);
+  </script>
+</body>
+</html>
