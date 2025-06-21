@@ -1,146 +1,133 @@
-import { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 export default function Home() {
-  const [csrfToken, setCsrfToken] = useState(null);
-  const [sessionUrl, setSessionUrl] = useState(null);
-  const [timer, setTimer] = useState(0);
-  const [intervalId, setIntervalId] = useState(null);
+  const [csrf, setCsrf] = useState("");
+  const [hbUrl, setHbUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sessionActive, setSessionActive] = useState(false);
 
-  // Fetch CSRF token on mount
-  useEffect(() => {
-    fetch("/api/csrf")
-      .then((res) => res.json())
-      .then((data) => setCsrfToken(data.csrfToken));
-  }, []);
-
-  function formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  }
-
-  const startSession = async () => {
-    setLoading(true);
+  // 1. Fetch CSRF token
+  const getCsrf = async () => {
     setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/hyperbeam?type=csrf");
+      const data = await res.json();
+      if (res.ok && data.csrfToken) {
+        setCsrf(data.csrfToken);
+      } else {
+        setError("Failed to get CSRF token");
+      }
+    } catch (err) {
+      setError("Network error: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  // 2. Start Hyperbeam session
+  const startSession = async () => {
+    setError("");
+    setLoading(true);
     try {
       const res = await fetch("/api/hyperbeam", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-csrf-token": csrfToken,
-          // "x-api-secret": "your_api_secret" // Optional
+          "x-csrf-token": csrf,
+          // "x-api-secret": "MY_SECRET", // Uncomment if using API_SECRET
         },
       });
       const data = await res.json();
-      if (data.url) {
-        setSessionUrl(data.url);
-        setTimer(720);
-        // Countdown
-        const id = setInterval(() => {
-          setTimer((t) => {
-            if (t <= 1) {
-              clearInterval(id);
-              endSession();
-              return 0;
-            }
-            return t - 1;
-          });
-        }, 1000);
-        setIntervalId(id);
+      if (res.ok && data.url) {
+        setHbUrl(data.url);
+        setSessionActive(true);
       } else {
         setError(data.error || "Failed to start session");
       }
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      setError("Network error: " + err.message);
     }
+    setLoading(false);
   };
 
+  // 3. End Hyperbeam session
   const endSession = async () => {
-    setSessionUrl(null);
-    setTimer(0);
-    if (intervalId) clearInterval(intervalId);
+    setError("");
+    setLoading(true);
     try {
-      await fetch("/api/end-hyperbeam", {
+      const res = await fetch("/api/hyperbeam?type=end", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-csrf-token": csrfToken,
-          // "x-api-secret": "your_api_secret" // Optional
+          "x-csrf-token": csrf,
+          // "x-api-secret": "MY_SECRET", // Uncomment if using API_SECRET
         },
       });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSessionActive(false);
+        setHbUrl("");
+      } else {
+        setError(data.error || "Failed to end session");
+      }
     } catch (err) {
-      // ignore
+      setError("Network error: " + err.message);
     }
+    setLoading(false);
   };
 
-  useEffect(() => {
-    // End session on unload (tab close)
-    const handler = () => endSession();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-    // eslint-disable-next-line
-  }, [csrfToken]);
-
   return (
-    <div style={{ padding: "2rem", textAlign: "center", minHeight: "100vh", background: "#101925", color: "#fff" }}>
-      <h1 style={{ marginBottom: "2rem" }}>Vapor-Style Hyperbeam Session</h1>
-      {error && <div style={{ color: "#ff6363", margin: 10 }}>{error}</div>}
-      {!sessionUrl && (
-        <button
-          onClick={startSession}
-          disabled={loading || !csrfToken}
-          style={{
-            background: "#4c75f2",
-            color: "#fff",
-            border: "none",
-            borderRadius: "6px",
-            padding: "1em 2em",
-            fontSize: "1.1em",
-            cursor: "pointer",
-            margin: "1em"
-          }}
-        >
-          {loading ? "Starting..." : "Start Session"}
+    <main style={{ maxWidth: 600, margin: "0 auto", padding: 20 }}>
+      <h1>Hyperbeam Demo</h1>
+      {!csrf && (
+        <button onClick={getCsrf} disabled={loading}>
+          {loading ? "Loading..." : "Get CSRF Token"}
         </button>
       )}
-      {sessionUrl && (
-        <div>
-          <p>
-            <b>Session in progress!</b>
-            <br />
-            <a
-              href={sessionUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "#4c75f2" }}
-            >
-              Open your VM
-            </a>
-          </p>
-          <p id="timer" style={{ fontSize: "1.2em", margin: "1em 0" }}>
-            Time left: <b>{formatTime(timer)}</b>
-          </p>
-          <button
-            onClick={endSession}
-            style={{
-              background: "#ff6363",
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              padding: "1em 2em",
-              fontSize: "1.1em",
-              cursor: "pointer",
-              margin: "1em"
-            }}
-          >
-            End Session
-          </button>
+      {csrf && !sessionActive && (
+        <button onClick={startSession} disabled={loading}>
+          {loading ? "Starting..." : "Start Hyperbeam Session"}
+        </button>
+      )}
+      {sessionActive && (
+        <button onClick={endSession} disabled={loading}>
+          {loading ? "Ending..." : "End Hyperbeam Session"}
+        </button>
+      )}
+      {error && (
+        <div style={{ color: "red", marginTop: 20 }}>
+          <b>Error:</b> {error}
         </div>
       )}
-    </div>
+      {hbUrl && sessionActive && (
+        <div style={{ marginTop: 20 }}>
+          <h2>Session Embed</h2>
+          <iframe
+            src={hbUrl}
+            title="Hyperbeam"
+            width="100%"
+            height="400"
+            allow="autoplay; clipboard-write; camera; microphone"
+            frameBorder="0"
+            allowFullScreen
+          />
+        </div>
+      )}
+      <div style={{ marginTop: 40, color: "#555", fontSize: 13 }}>
+        <p>
+          <b>Instructions:</b>
+        </p>
+        <ol>
+          <li>Click <b>Get CSRF Token</b> (required for secure APIs).</li>
+          <li>Click <b>Start Hyperbeam Session</b>. The embed will appear if successful.</li>
+          <li>Click <b>End Hyperbeam Session</b> to close it.</li>
+        </ol>
+        <p>
+          If you set <code>API_SECRET</code> in your backend, uncomment the <code>x-api-secret</code> lines and put your secret.<br />
+          This demo is for educational purposes—add your own authentication for production use.
+        </p>
+      </div>
+    </main>
   );
 }
