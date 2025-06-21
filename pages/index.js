@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
-// --- Serverless API handler ---
+// --- Single-file API handling for Vercel ---
 export async function getServerSideProps({ req, res }) {
-  // Cookie parsing/serializing
+  // Cookie helpers
   function parseCookies(cookieHeader = "") {
     return Object.fromEntries(
       cookieHeader
@@ -25,7 +25,7 @@ export async function getServerSideProps({ req, res }) {
     return cookie;
   }
 
-  // --- API endpoints served from this file only ---
+  // --- API endpoints (all handled here) ---
   if (req.url.startsWith("/api/")) {
     res.setHeader("Content-Type", "application/json");
 
