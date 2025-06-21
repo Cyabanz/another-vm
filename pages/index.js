@@ -6,6 +6,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sessionActive, setSessionActive] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   // 1. Fetch CSRF token
   const getCsrf = async () => {
@@ -35,7 +36,7 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
           "x-csrf-token": csrf,
-          // "x-api-secret": "MY_SECRET", // Uncomment if using API_SECRET
+          "x-api-secret": "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC", // your secret
         },
       });
       const data = await res.json();
@@ -54,14 +55,14 @@ export default function Home() {
   // 3. End Hyperbeam session
   const endSession = async () => {
     setError("");
-    setLoading(true);
+    setEnding(true);
     try {
       const res = await fetch("/api/hyperbeam?type=end", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-csrf-token": csrf,
-          // "x-api-secret": "MY_SECRET", // Uncomment if using API_SECRET
+          "x-api-secret": "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC", // your secret
         },
       });
       const data = await res.json();
@@ -74,27 +75,29 @@ export default function Home() {
     } catch (err) {
       setError("Network error: " + err.message);
     }
-    setLoading(false);
+    setEnding(false);
   };
 
   return (
     <main style={{ maxWidth: 600, margin: "0 auto", padding: 20 }}>
       <h1>Hyperbeam Demo</h1>
-      {!csrf && (
-        <button onClick={getCsrf} disabled={loading}>
-          {loading ? "Loading..." : "Get CSRF Token"}
-        </button>
-      )}
-      {csrf && !sessionActive && (
-        <button onClick={startSession} disabled={loading}>
-          {loading ? "Starting..." : "Start Hyperbeam Session"}
-        </button>
-      )}
-      {sessionActive && (
-        <button onClick={endSession} disabled={loading}>
-          {loading ? "Ending..." : "End Hyperbeam Session"}
-        </button>
-      )}
+      <div style={{ marginBottom: 20 }}>
+        {!csrf && (
+          <button onClick={getCsrf} disabled={loading}>
+            {loading ? "Loading..." : "Get CSRF Token"}
+          </button>
+        )}
+        {csrf && !sessionActive && (
+          <button onClick={startSession} disabled={loading}>
+            {loading ? "Starting..." : "Start Hyperbeam Session"}
+          </button>
+        )}
+        {sessionActive && (
+          <button onClick={endSession} disabled={ending}>
+            {ending ? "Ending..." : "End Hyperbeam Session"}
+          </button>
+        )}
+      </div>
       {error && (
         <div style={{ color: "red", marginTop: 20 }}>
           <b>Error:</b> {error}
@@ -124,7 +127,7 @@ export default function Home() {
           <li>Click <b>End Hyperbeam Session</b> to close it.</li>
         </ol>
         <p>
-          If you set <code>API_SECRET</code> in your backend, uncomment the <code>x-api-secret</code> lines and put your secret.<br />
+          If you set <code>API_SECRET</code> in your backend, make sure it matches in your frontend code.<br />
           This demo is for educational purposes—add your own authentication for production use.
         </p>
       </div>
