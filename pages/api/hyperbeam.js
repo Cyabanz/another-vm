@@ -66,7 +66,9 @@ export default async function handler(req, res) {
     if (!API_KEY) return res.status(500).json({ error: 'Missing Hyperbeam API key' });
 
     try {
-      const payload = { expires_in: 720 }; // 12 minutes
+      // Support custom session duration, default 5 minutes (300s)
+      const { expires_in } = req.body || {};
+      const payload = { expires_in: typeof expires_in === "number" ? expires_in : 300 };
       const response = await fetch('https://engine.hyperbeam.com/v0/vm', {
         method: 'POST',
         headers: {
@@ -95,7 +97,7 @@ export default async function handler(req, res) {
           maxAge: 60 * 15, // 15 minutes
         })
       );
-      return res.status(200).json({ url: data.embed_url, expires_in: 720 });
+      return res.status(200).json({ url: data.embed_url, expires_in: payload.expires_in });
     } catch (err) {
       return res.status(500).json({ error: 'Server error: ' + err.message });
     }
