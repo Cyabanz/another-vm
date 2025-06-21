@@ -7,6 +7,17 @@ export default function Home() {
   const [error, setError] = useState("");
   const [sessionActive, setSessionActive] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [expiresIn, setExpiresIn] = useState(0);
+  const [timer, setTimer] = useState(null);
+
+  const API_SECRET = "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC"; // your secret
+
+  // Helper to clear the countdown timer
+  const clearSessionTimer = () => {
+    if (timer) clearTimeout(timer);
+    setTimer(null);
+    setExpiresIn(0);
+  };
 
   // 1. Fetch CSRF token
   const getCsrf = async () => {
@@ -26,7 +37,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  // 2. Start Hyperbeam session
+  // 2. Start Hyperbeam session (5 minutes)
   const startSession = async () => {
     setError("");
     setLoading(true);
@@ -36,13 +47,23 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
           "x-csrf-token": csrf,
-          "x-api-secret": "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC", // your secret
+          "x-api-secret": API_SECRET,
         },
+        body: JSON.stringify({
+          expires_in: 300, // 5 minutes in seconds
+        }),
       });
       const data = await res.json();
       if (res.ok && data.url) {
         setHbUrl(data.url);
         setSessionActive(true);
+        setExpiresIn(300);
+
+        // Start countdown and auto-end session after 5 minutes
+        const t = setTimeout(() => {
+          handleAutoEndSession();
+        }, 300 * 1000);
+        setTimer(t);
       } else {
         setError(data.error || "Failed to start session");
       }
@@ -62,13 +83,14 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
           "x-csrf-token": csrf,
-          "x-api-secret": "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC", // your secret
+          "x-api-secret": API_SECRET,
         },
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setSessionActive(false);
         setHbUrl("");
+        clearSessionTimer();
       } else {
         setError(data.error || "Failed to end session");
       }
@@ -78,9 +100,46 @@ export default function Home() {
     setEnding(false);
   };
 
+  // 4. Auto end session after 5 minutes
+  const handleAutoEndSession = async () => {
+    setError("");
+    setEnding(true);
+    try {
+      const res = await fetch("/api/hyperbeam?type=end", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,
+          "x-api-secret": API_SECRET,
+        },
+      });
+      setSessionActive(false);
+      setHbUrl("");
+      clearSessionTimer();
+    } catch (err) {
+      setError("Session auto-end failed: " + err.message);
+    }
+    setEnding(false);
+  };
+
+  // Countdown UI
+  React.useEffect(() => {
+    if (!sessionActive || expiresIn <= 0) return;
+    const interval = setInterval(() => {
+      setExpiresIn((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sessionActive, expiresIn]);
+
   return (
     <main style={{ maxWidth: 600, margin: "0 auto", padding: 20 }}>
-      <h1>Hyperbeam Demo</h1>
+      <h1>Hyperbeam Demo (5 Minute Session Limit)</h1>
       <div style={{ marginBottom: 20 }}>
         {!csrf && (
           <button onClick={getCsrf} disabled={loading}>
@@ -89,7 +148,7 @@ export default function Home() {
         )}
         {csrf && !sessionActive && (
           <button onClick={startSession} disabled={loading}>
-            {loading ? "Starting..." : "Start Hyperbeam Session"}
+            {loading ? "Starting..." : "Start Hyperbeam Session (5 min)"}
           </button>
         )}
         {sessionActive && (
@@ -115,6 +174,12 @@ export default function Home() {
             frameBorder="0"
             allowFullScreen
           />
+          <div style={{ marginTop: 10, fontWeight: "bold", color: "#0070f3" }}>
+            Time left: {Math.floor(expiresIn / 60)
+              .toString()
+              .padStart(2, "0")}
+            :{(expiresIn % 60).toString().padStart(2, "0")}
+          </div>
         </div>
       )}
       <div style={{ marginTop: 40, color: "#555", fontSize: 13 }}>
@@ -123,12 +188,12 @@ export default function Home() {
         </p>
         <ol>
           <li>Click <b>Get CSRF Token</b> (required for secure APIs).</li>
-          <li>Click <b>Start Hyperbeam Session</b>. The embed will appear if successful.</li>
-          <li>Click <b>End Hyperbeam Session</b> to close it.</li>
+          <li>Click <b>Start Hyperbeam Session</b>. The embed will appear if successful and will auto-end after 5 minutes.</li>
+          <li>Click <b>End Hyperbeam Session</b> to close it manually.</li>
         </ol>
         <p>
-          If you set <code>API_SECRET</code> in your backend, make sure it matches in your frontend code.<br />
-          This demo is for educational purposes—add your own authentication for production use.
+          <b>Warning:</b> This demo uses a hardcoded API secret for demonstration. In production, use a secure method.<br />
+          Add your own authentication for real users.
         </p>
       </div>
     </main>
