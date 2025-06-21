@@ -1,66 +1,98 @@
-import fetch from 'node-fetch';
+const HB_API_KEY = process.env.HYPERBEAM_API_KEY; // Should be set in your Vercel/Next.js env
+const API_SECRET = process.env.API_SECRET || "8GdkvF3nL0wQz6Tr5bY2pRx9sJ1VhMnC"; // Replace with your secret
 
-function parseCookies(cookieHeader = '') {
-  return Object.fromEntries(
-    cookieHeader.split(";").map(c => {
-      const [k, ...v] = c.trim().split("=");
-      return [k, decodeURIComponent(v.join("="))];
-    }).filter(([k]) => k)
-  );
-}
+// Simple in-memory storage (not for production)
+let sessionInfo = {};
 
-function serializeCookie(name, value, options = {}) {
-  let cookie = `${name}=${encodeURIComponent(value)}`;
-  if (options.maxAge) cookie += `; Max-Age=${options.maxAge}`;
-  if (options.httpOnly) cookie += `; HttpOnly`;
-  if (options.secure) cookie += `; Secure`;
-  if (options.path) cookie += `; Path=${options.path}`;
-  if (options.sameSite) cookie += `; SameSite=${options.sameSite}`;
-  if (options.expires) cookie += `; Expires=${options.expires.toUTCString()}`;
-  return cookie;
+// Helper to randomize CSRF
+function makeCsrf() {
+  return Math.random().toString(36).slice(2) + Date.now();
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'POST') {
-    const cookies = parseCookies(req.headers.cookie || '');
-    const csrfCookie = cookies.csrfToken;
-    const csrfHeader = req.headers['x-csrf-token'];
-    if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
-      return res.status(403).json({ error: 'Invalid CSRF token' });
-    }
+  const { type } = req.query;
 
-    try {
-      const response = await fetch('https://engine.hyperbeam.com/v0/vm', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.HYPERBEAM_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ expires_in: 720 }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.session_id || !data.admin_token || !data.embed_url) {
-        return res.status(500).json({ error: data.error || 'Hyperbeam creation failed' });
-      }
-
-      res.setHeader(
-        'Set-Cookie',
-        serializeCookie('hyperbeam', btoa(JSON.stringify({
-          session_id: data.session_id,
-          admin_token: data.admin_token,
-        })), {
-          httpOnly: true,
-          sameSite: 'lax',
-          path: '/',
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 60 * 15,
-        })
-      );
-      return res.status(200).json({ url: data.embed_url, expires_in: 720 });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
+  // 1. CSRF token endpoint
+  if (req.method === "GET" && type === "csrf") {
+    const csrfToken = makeCsrf();
+    sessionInfo.csrfToken = csrfToken;
+    res.status(200).json({ csrfToken });
+    return;
   }
-  res.status(405).end();
+
+  const csrfHeader = req.headers["x-csrf-token"];
+  const apiSecret = req.headers["x-api-secret"];
+
+  // 2. Validate CSRF and secret for POSTs
+  if (
+    !csrfHeader ||
+    !sessionInfo.csrfToken ||
+    csrfHeader !== sessionInfo.csrfToken
+  ) {
+    res.status(403).json({ error: "Invalid CSRF token" });
+    return;
+  }
+  if (!apiSecret || apiSecret !== API_SECRET) {
+    res.status(403).json({ error: "Invalid API secret" });
+    return;
+  }
+
+  // 3. Start session
+  if (req.method === "POST" && !type) {
+    try {
+      const hbRes = await fetch("https://engine.hyperbeam.com/v0/vm", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${HB_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ expires_in: 600 }),
+      });
+      const data = await hbRes.json();
+      if (!hbRes.ok || !data.session_id || !data.embed_url || !data.admin_token) {
+        res.status(500).json({ error: data.error || "Hyperbeam error" });
+        return;
+      }
+      // Store info for end
+      sessionInfo.session_id = data.session_id;
+      sessionInfo.admin_token = data.admin_token;
+      res.status(200).json({ url: data.embed_url });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+    return;
+  }
+
+  // 4. End session
+  if (req.method === "POST" && type === "end") {
+    if (!sessionInfo.session_id || !sessionInfo.admin_token) {
+      res.status(400).json({ error: "No active session" });
+      return;
+    }
+    try {
+      const delRes = await fetch(
+        `https://engine.hyperbeam.com/v0/vm/${sessionInfo.session_id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${sessionInfo.admin_token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      // Clean up
+      sessionInfo = {};
+      if (!delRes.ok) {
+        res.status(500).json({ error: "Failed to end session" });
+        return;
+      }
+      res.status(200).json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+    return;
+  }
+
+  // 5. Not found
+  res.status(404).json({ error: "Not found" });
 }
