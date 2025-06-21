@@ -92,7 +92,7 @@ export default async function handler(req, res) {
           maxAge: 60 * 15, // 15 minutes
         })
       );
-      return res.status(200).json({ url: data.embed_url, expires_in: payload.expires_in });
+      return res.status(200).json({ url: data.embed_url, session_id: data.session_id, expires_in: payload.expires_in });
     } catch (err) {
       return res.status(500).json({ error: 'Server error: ' + err.message });
     }
