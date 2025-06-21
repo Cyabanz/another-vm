@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 
-// --- Single-file API handling for Vercel ---
+// --- FULL IN-FILE API HANDLING FOR VERCEL ---
 export async function getServerSideProps({ req, res }) {
-  // Cookie helpers
+  // --- Cookie Helpers ---
   function parseCookies(cookieHeader = "") {
     return Object.fromEntries(
       cookieHeader
@@ -25,11 +25,11 @@ export async function getServerSideProps({ req, res }) {
     return cookie;
   }
 
-  // --- API endpoints (all handled here) ---
+  // --- Handle All API Endpoints In This File ---
   if (req.url.startsWith("/api/")) {
     res.setHeader("Content-Type", "application/json");
 
-    // CSRF
+    // CSRF Endpoint
     if (req.url === "/api/csrf" && req.method === "GET") {
       const token = Math.random().toString(36).slice(2) + Date.now();
       res.setHeader(
@@ -44,7 +44,7 @@ export async function getServerSideProps({ req, res }) {
       return { props: {} };
     }
 
-    // Start Hyperbeam Session
+    // Create Hyperbeam Session
     if (req.url === "/api/hyperbeam" && req.method === "POST") {
       let body = "";
       await new Promise(resolve => {
@@ -197,14 +197,14 @@ export default function Home() {
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
 
-  // Get CSRF on load
+  // Fetch CSRF token on mount
   useEffect(() => {
     fetch("/api/csrf")
       .then(res => res.json())
       .then(data => setCsrfToken(data.csrfToken));
   }, []);
 
-  // Timer logic
+  // Timer decrement logic
   useEffect(() => {
     if (timer > 0 && running) {
       const id = setTimeout(() => setTimer(timer - 1), 1000);
@@ -225,7 +225,7 @@ export default function Home() {
 
   function startSession() {
     setError("");
-    setRunning(true);
+    setRunning(true); // Always set running so End button is visible
     fetch("/api/hyperbeam", {
       method: "POST",
       headers: {
@@ -275,22 +275,50 @@ export default function Home() {
     <div style={{ fontFamily: "Arial, sans-serif", background: "#101925", color: "#fff", minHeight: "100vh", textAlign: "center", padding: "2rem" }}>
       <h1>Vapor-Style Hyperbeam Session</h1>
       <div id="controls">
-        <button style={{background:"#4c75f2", color:"#fff", border:"none", borderRadius:"6px", padding:"1em 2em", fontSize:"1.1em", cursor:"pointer", margin:"1em"}} disabled={running} onClick={startSession} id="startBtn">
+        <button style={{
+            background: "#4c75f2",
+            color: "#fff",
+            border: "none",
+            borderRadius: "6px",
+            padding: "1em 2em",
+            fontSize: "1.1em",
+            cursor: "pointer",
+            margin: "1em"
+          }}
+          disabled={running}
+          onClick={startSession}
+          id="startBtn"
+        >
           Start Session
         </button>
-        <button style={{background:"#4c75f2", color:"#fff", border:"none", borderRadius:"6px", padding:"1em 2em", fontSize:"1.1em", cursor:"pointer", margin:"1em", display: running ? "" : "none"}} onClick={stopSession} id="endBtn">
+        <button style={{
+            background: "#4c75f2",
+            color: "#fff",
+            border: "none",
+            borderRadius: "6px",
+            padding: "1em 2em",
+            fontSize: "1.1em",
+            cursor: "pointer",
+            margin: "1em",
+            display: running ? "" : "none"
+          }}
+          onClick={stopSession}
+          id="endBtn"
+        >
           End Session
         </button>
       </div>
-      <div id="timer" style={{fontSize:"1.2em", margin:"1em 0"}}>
+      <div id="timer" style={{ fontSize: "1.2em", margin: "1em 0" }}>
         {running && timer > 0 ? `Time left: ${formatTime(timer)}` : ""}
       </div>
-      <div id="sessionLink" style={{marginBottom:"1em"}}>
+      <div id="sessionLink" style={{ marginBottom: "1em" }}>
         {sessionUrl && (
-          <a href={sessionUrl} target="_blank" rel="noopener noreferrer" style={{color:"#4c75f2"}}>Open your VM</a>
+          <a href={sessionUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#4c75f2" }}>
+            Open your VM
+          </a>
         )}
       </div>
-      <div id="error" style={{color:"#ff6363", margin:"1em 0"}}>{error}</div>
+      <div id="error" style={{ color: "#ff6363", margin: "1em 0" }}>{error}</div>
     </div>
   );
 }
