@@ -1,18 +1,43 @@
-import fetch from 'node-fetch';
-import { nanoid } from 'nanoid';
-import cookie from 'cookie';
+// Utility functions for cookies
+function parseCookies(cookieHeader = "") {
+  return Object.fromEntries(
+    cookieHeader.split(";").map(cookieStr => {
+      const [key, ...v] = cookieStr.trim().split("=");
+      return [key, decodeURIComponent(v.join("="))];
+    }).filter(([k]) => k)
+  );
+}
+
+function serializeCookie(name, value, options = {}) {
+  let cookie = `${name}=${encodeURIComponent(value)}`;
+  if (options.maxAge) cookie += `; Max-Age=${options.maxAge}`;
+  if (options.httpOnly) cookie += `; HttpOnly`;
+  if (options.secure) cookie += `; Secure`;
+  if (options.path) cookie += `; Path=${options.path}`;
+  if (options.sameSite) cookie += `; SameSite=${options.sameSite}`;
+  if (options.expires) cookie += `; Expires=${options.expires.toUTCString()}`;
+  return cookie;
+}
+
+// Generate a random CSRF token (using crypto or fallback)
+function generateCsrfToken() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // fallback: simple random string
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
 
 export default async function handler(req, res) {
   // Route selection
-  // Support three endpoints via ?type=csrf, ?type=end, or POST (default: create session)
   const { type } = req.query;
 
   // --- 1. CSRF Token Issuance ---
   if (req.method === 'GET' && type === 'csrf') {
-    const csrfToken = nanoid(32);
+    const csrfToken = generateCsrfToken();
     res.setHeader(
       'Set-Cookie',
-      cookie.serialize('csrfToken', csrfToken, {
+      serializeCookie('csrfToken', csrfToken, {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
@@ -26,7 +51,7 @@ export default async function handler(req, res) {
   // --- 2. Hyperbeam Session Creation ---
   if (req.method === 'POST' && (!type || type === 'create')) {
     // CSRF validation
-    const cookies = cookie.parse(req.headers.cookie || '');
+    const cookies = parseCookies(req.headers.cookie || '');
     const csrfCookie = cookies.csrfToken;
     const csrfHeader = req.headers['x-csrf-token'];
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
@@ -59,10 +84,10 @@ export default async function handler(req, res) {
       // Store session info in httpOnly cookie for later termination
       res.setHeader(
         'Set-Cookie',
-        cookie.serialize('hyperbeam', JSON.stringify({
+        serializeCookie('hyperbeam', btoa(JSON.stringify({
           session_id: data.session_id,
           admin_token: data.admin_token,
-        }), {
+        })), {
           httpOnly: true,
           sameSite: 'lax',
           path: '/',
@@ -79,7 +104,7 @@ export default async function handler(req, res) {
   // --- 3. Hyperbeam Session Termination ---
   if (req.method === 'POST' && type === 'end') {
     // CSRF validation
-    const cookies = cookie.parse(req.headers.cookie || '');
+    const cookies = parseCookies(req.headers.cookie || '');
     const csrfCookie = cookies.csrfToken;
     const csrfHeader = req.headers['x-csrf-token'];
     if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
@@ -90,7 +115,7 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     // Get session info from cookie
-    const sessionInfo = cookies.hyperbeam ? JSON.parse(cookies.hyperbeam) : null;
+    const sessionInfo = cookies.hyperbeam ? JSON.parse(atob(cookies.hyperbeam)) : null;
     if (!sessionInfo || !sessionInfo.session_id || !sessionInfo.admin_token) {
       return res.status(400).json({ error: 'No active session' });
     }
@@ -106,7 +131,7 @@ export default async function handler(req, res) {
       // Clear session cookie
       res.setHeader(
         'Set-Cookie',
-        cookie.serialize('hyperbeam', '', {
+        serializeCookie('hyperbeam', '', {
           httpOnly: true,
           sameSite: 'lax',
           path: '/',
